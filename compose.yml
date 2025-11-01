@@ -1,0 +1,104 @@
+services:
+
+  immich-server:
+#    image: blackvoidclub/midnight-commander
+    build:
+      context: ./gocryptfs-extension
+    container_name: immich_server
+    image: yasuoiwakura/immich-app/immich-server-custom:latest
+    #image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
+    volumes:
+      # Do not edit the next line. If you want to change the media storage location on your system, edit the value of UPLOAD_LOCATION in the .env file
+      - ${UPLOAD_LOCATION}:/encrypted
+      - /etc/localtime:/etc/localtime:ro
+    env_file:
+      - .env
+    ports:
+#     - 127.0.0.1:9000:9000
+      - 127.0.0.1:2283:2283
+    environment:
+      #gocryptfs_decrypt_dir: /data
+      gocryptfs_decrypt_dir: /usr/src/app/upload #path might change again, check Immich docs
+    networks:
+      # - traefik
+      - immich
+    depends_on:
+      database:
+        condition: service_healthy
+
+    restart: always
+    healthcheck:
+      disable: false
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    security_opt:
+      - apparmor:unconfined
+
+  immich_enterpass:
+    restart: no
+    build: ./enterpass
+    container_name: immich_enterpass
+    profiles: ["manual"]
+    stdin_open: true
+    tty: true
+    environment:
+      FORGET_PASS: 0 #1 will break loop after success
+    labels:
+      - "traefik.enable=false"
+    networks:
+      - immich
+
+  immich-machine-learning:
+    container_name: immich_machine_learning
+    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}
+    volumes:
+      - model-cache:/cache
+    env_file:
+      - .env
+    restart: always
+    healthcheck:
+      disable: false
+    labels:
+      - "traefik.enable=false"
+    networks:
+      - immich
+
+  redis:
+    container_name: immich_redis
+    image: docker.io/valkey/valkey:8-bookworm@sha256:fec42f399876eb6faf9e008570597741c87ff7662a54185593e74b09ce83d177
+    healthcheck:
+      test: redis-cli ping || exit 1
+    restart: always
+    networks:
+      - immich
+    labels:
+      - "traefik.enable=false"
+
+  database:
+    container_name: immich_postgres
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_DB: ${DB_DATABASE_NAME}
+      POSTGRES_INITDB_ARGS: '--data-checksums'
+    volumes:
+      # Do not edit the next line. If you want to change the database storage location on your system, edit the value of DB_DATA_LOCATION in the .env file
+      - ${DB_DATA_LOCATION}:/var/lib/postgresql/data
+    restart: always
+    networks:
+      - immich
+    labels:
+      - "traefik.enable=false"
+
+volumes:
+  model-cache:
+
+networks:
+  immich:
+  # traefik:
+    # external: true
+
+
